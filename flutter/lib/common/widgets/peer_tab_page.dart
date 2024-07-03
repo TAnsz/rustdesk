@@ -37,7 +37,7 @@ class _TabEntry {
 }
 
 EdgeInsets? _menuPadding() {
-  return isDesktop ? kDesktopMenuPadding : null;
+  return (isDesktop || isWebDesktop) ? kDesktopMenuPadding : null;
 }
 
 class _PeerTabPageState extends State<PeerTabPage>
@@ -74,9 +74,11 @@ class _PeerTabPageState extends State<PeerTabPage>
   ];
   RelativeRect? mobileTabContextMenuPos;
 
+  final isOptVisiableFixed = isOptionFixed(kOptionPeerTabVisible);
+
   @override
   void initState() {
-    final uiType = bind.getLocalFlutterOption(k: 'peer-card-ui-type');
+    final uiType = bind.getLocalFlutterOption(k: kOptionPeerCardUiType);
     if (uiType != '') {
       peerCardUiType.value = int.parse(uiType) == 0
           ? PeerUiType.grid
@@ -85,7 +87,7 @@ class _PeerTabPageState extends State<PeerTabPage>
               : PeerUiType.list;
     }
     hideAbTagsPanel.value =
-        bind.mainGetLocalOption(key: "hideAbTagsPanel").isNotEmpty;
+        bind.mainGetLocalOption(key: kOptionHideAbTagsPanel).isNotEmpty;
     super.initState();
   }
 
@@ -113,7 +115,9 @@ class _PeerTabPageState extends State<PeerTabPage>
         SizedBox(
           height: 32,
           child: Container(
-            padding: isDesktop ? null : EdgeInsets.symmetric(horizontal: 2),
+            padding: (isDesktop || isWebDesktop)
+                ? null
+                : EdgeInsets.symmetric(horizontal: 2),
             child: selectionWrap(Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -127,7 +131,7 @@ class _PeerTabPageState extends State<PeerTabPage>
               ],
             )),
           ),
-        ).paddingOnly(right: isDesktop ? 12 : 0),
+        ).paddingOnly(right: (isDesktop || isWebDesktop) ? 12 : 0),
         _createPeersView(),
       ],
     );
@@ -135,11 +139,13 @@ class _PeerTabPageState extends State<PeerTabPage>
 
   Widget _createSwitchBar(BuildContext context) {
     final model = Provider.of<PeerTabModel>(context);
-
-    return ListView(
+    var counter = -1;
+    return ReorderableListView(
+        buildDefaultDragHandles: false,
+        onReorder: model.reorder,
         scrollDirection: Axis.horizontal,
         physics: NeverScrollableScrollPhysics(),
-        children: model.visibleIndexs.map((t) {
+        children: model.visibleEnabledOrderedIndexs.map((t) {
           final selected = model.currentTab == t;
           final color = selected
               ? MyTheme.tabbar(context).selectedTextColor
@@ -153,49 +159,56 @@ class _PeerTabPageState extends State<PeerTabPage>
               border: Border(
             bottom: BorderSide(width: 2, color: color!),
           ));
-          return Obx(() => Tooltip(
-                preferBelow: false,
-                message: model.tabTooltip(t),
-                onTriggered: isMobile ? mobileShowTabVisibilityMenu : null,
-                child: InkWell(
-                  child: Container(
-                    decoration: (hover.value
-                        ? (selected ? decoBorder : deco)
-                        : (selected ? decoBorder : null)),
-                    child: Icon(model.tabIcon(t), color: color)
-                        .paddingSymmetric(horizontal: 4),
-                  ).paddingSymmetric(horizontal: 4),
-                  onTap: () async {
-                    await handleTabSelection(t);
-                    await bind.setLocalFlutterOption(
-                        k: 'peer-tab-index', v: t.toString());
-                  },
-                  onHover: (value) => hover.value = value,
-                ),
-              ));
+          counter += 1;
+          return ReorderableDragStartListener(
+              key: ValueKey(t),
+              index: counter,
+              child: Obx(() => Tooltip(
+                    preferBelow: false,
+                    message: model.tabTooltip(t),
+                    onTriggered: isMobile ? mobileShowTabVisibilityMenu : null,
+                    child: InkWell(
+                      child: Container(
+                        decoration: (hover.value
+                            ? (selected ? decoBorder : deco)
+                            : (selected ? decoBorder : null)),
+                        child: Icon(model.tabIcon(t), color: color)
+                            .paddingSymmetric(horizontal: 4),
+                      ).paddingSymmetric(horizontal: 4),
+                      onTap: isOptionFixed(kOptionPeerTabIndex)
+                          ? null
+                          : () async {
+                              await handleTabSelection(t);
+                              await bind.setLocalFlutterOption(
+                                  k: kOptionPeerTabIndex, v: t.toString());
+                            },
+                      onHover: (value) => hover.value = value,
+                    ),
+                  )));
         }).toList());
   }
 
   Widget _createPeersView() {
     final model = Provider.of<PeerTabModel>(context);
     Widget child;
-    if (model.visibleIndexs.isEmpty) {
+    if (model.visibleEnabledOrderedIndexs.isEmpty) {
       child = visibleContextMenuListener(Row(
         children: [Expanded(child: InkWell())],
       ));
     } else {
-      if (model.visibleIndexs.contains(model.currentTab)) {
+      if (model.visibleEnabledOrderedIndexs.contains(model.currentTab)) {
         child = entries[model.currentTab].widget;
       } else {
         debugPrint("should not happen! currentTab not in visibleIndexs");
         Future.delayed(Duration.zero, () {
-          model.setCurrentTab(model.indexs[0]);
+          model.setCurrentTab(model.visibleEnabledOrderedIndexs[0]);
         });
         child = entries[0].widget;
       }
     }
     return Expanded(
-        child: child.marginSymmetric(vertical: isDesktop ? 12.0 : 6.0));
+        child: child.marginSymmetric(
+            vertical: (isDesktop || isWebDesktop) ? 12.0 : 6.0));
   }
 
   Widget _createRefresh(
@@ -252,20 +265,26 @@ class _PeerTabPageState extends State<PeerTabPage>
   void mobileShowTabVisibilityMenu() {
     final model = gFFI.peerTabModel;
     final items = List<PopupMenuItem>.empty(growable: true);
-    for (int i = 0; i < model.tabNames.length; i++) {
+    for (int i = 0; i < PeerTabModel.maxTabCount; i++) {
+      if (!model.isEnabled[i]) continue;
       items.add(PopupMenuItem(
         height: kMinInteractiveDimension * 0.8,
-        onTap: () => model.setTabVisible(i, !model.isVisible[i]),
+        onTap: isOptVisiableFixed
+            ? null
+            : () => model.setTabVisible(i, !model.isVisibleEnabled[i]),
+        enabled: !isOptVisiableFixed,
         child: Row(
           children: [
             Checkbox(
-                value: model.isVisible[i],
-                onChanged: (_) {
-                  model.setTabVisible(i, !model.isVisible[i]);
-                  if (Navigator.canPop(context)) {
-                    Navigator.pop(context);
-                  }
-                }),
+                value: model.isVisibleEnabled[i],
+                onChanged: isOptVisiableFixed
+                    ? null
+                    : (_) {
+                        model.setTabVisible(i, !model.isVisibleEnabled[i]);
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        }
+                      }),
             Expanded(child: Text(model.tabTooltip(i))),
           ],
         ),
@@ -311,18 +330,21 @@ class _PeerTabPageState extends State<PeerTabPage>
 
   Widget visibleContextMenu(CancelFunc cancelFunc) {
     final model = Provider.of<PeerTabModel>(context);
-    final menu = List<MenuEntrySwitch>.empty(growable: true);
-    for (int i = 0; i < model.tabNames.length; i++) {
-      menu.add(MenuEntrySwitch(
+    final menu = List<MenuEntrySwitchSync>.empty(growable: true);
+    for (int i = 0; i < model.orders.length; i++) {
+      int tabIndex = model.orders[i];
+      if (tabIndex < 0 || tabIndex >= PeerTabModel.maxTabCount) continue;
+      if (!model.isEnabled[tabIndex]) continue;
+      menu.add(MenuEntrySwitchSync(
           switchType: SwitchType.scheckbox,
-          text: model.tabTooltip(i),
-          getter: () async {
-            return model.isVisible[i];
-          },
+          text: model.tabTooltip(tabIndex),
+          currentValue: model.isVisibleEnabled[tabIndex],
           setter: (show) async {
-            model.setTabVisible(i, show);
-            cancelFunc();
-          }));
+            model.setTabVisible(tabIndex, show);
+            // Do not hide the current menu (checkbox)
+            // cancelFunc();
+          },
+          enabled: (!isOptVisiableFixed).obs));
     }
     return mod_menu.PopupMenu(
         items: menu
@@ -431,7 +453,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           model.setMultiSelectionMode(false);
           showToast(translate('Successful'));
         },
-        child: Icon(model.icons[PeerTabIndex.fav.index]),
+        child: Icon(PeerTabModel.icons[PeerTabIndex.fav.index]),
       ).marginOnly(left: isMobile ? 11 : 6),
     );
   }
@@ -452,7 +474,7 @@ class _PeerTabPageState extends State<PeerTabPage>
           addPeersToAbDialog(peers);
           model.setMultiSelectionMode(false);
         },
-        child: Icon(model.icons[PeerTabIndex.ab.index]),
+        child: Icon(PeerTabModel.icons[PeerTabIndex.ab.index]),
       ).marginOnly(left: isMobile ? 11 : 6),
     );
   }
@@ -518,7 +540,7 @@ class _PeerTabPageState extends State<PeerTabPage>
   Widget _toggleTags() {
     return _hoverAction(
         context: context,
-        toolTip: translate('Toggle tags'),
+        toolTip: translate('Toggle Tags'),
         hoverableWhenfalse: hideAbTagsPanel,
         child: Icon(
           Icons.tag_rounded,
@@ -526,7 +548,8 @@ class _PeerTabPageState extends State<PeerTabPage>
         ),
         onTap: () async {
           await bind.mainSetLocalOption(
-              key: "hideAbTagsPanel", value: hideAbTagsPanel.value ? "" : "Y");
+              key: kOptionHideAbTagsPanel,
+              value: hideAbTagsPanel.value ? defaultOptionNo : "Y");
           hideAbTagsPanel.value = !hideAbTagsPanel.value;
         });
   }
@@ -560,7 +583,7 @@ class _PeerTabPageState extends State<PeerTabPage>
     final screenWidth = MediaQuery.of(context).size.width;
     final leftIconSize = Theme.of(context).iconTheme.size ?? 24;
     final leftActionsSize =
-        (leftIconSize + (4 + 4) * 2) * model.visibleIndexs.length;
+        (leftIconSize + (4 + 4) * 2) * model.visibleEnabledOrderedIndexs.length;
     final availableWidth = screenWidth - 10 * 2 - leftActionsSize - 2 * 2;
     final searchWidth = 120;
     final otherActionWidth = 18 + 10;
@@ -779,25 +802,38 @@ class _PeerViewDropdownState extends State<PeerViewDropdown> {
                 child: SizedBox(
                   height: 36,
                   child: getRadio<PeerUiType>(
-                      Text(
-                          translate(types.indexOf(e) == 0
+                      Tooltip(
+                          message: translate(types.indexOf(e) == 0
                               ? 'Big tiles'
                               : types.indexOf(e) == 1
                                   ? 'Small tiles'
                                   : 'List'),
-                          style: style),
+                          child: Icon(
+                            e == PeerUiType.grid
+                                ? Icons.grid_view_rounded
+                                : e == PeerUiType.list
+                                    ? Icons.view_list_rounded
+                                    : Icons.view_agenda_rounded,
+                            size: 18,
+                          )),
                       e,
                       peerCardUiType.value,
-                      dense: true, (PeerUiType? v) async {
-                    if (v != null) {
-                      peerCardUiType.value = v;
-                      setState(() {});
-                      await bind.setLocalFlutterOption(
-                        k: "peer-card-ui-type",
-                        v: peerCardUiType.value.index.toString(),
-                      );
-                    }
-                  }),
+                      dense: true,
+                      isOptionFixed(kOptionPeerCardUiType)
+                          ? null
+                          : (PeerUiType? v) async {
+                              if (v != null) {
+                                peerCardUiType.value = v;
+                                setState(() {});
+                                await bind.setLocalFlutterOption(
+                                  k: kOptionPeerCardUiType,
+                                  v: peerCardUiType.value.index.toString(),
+                                );
+                                if (Navigator.canPop(context)) {
+                                  Navigator.pop(context);
+                                }
+                              }
+                            }),
                 ),
               ))));
     }
@@ -809,7 +845,7 @@ class _PeerViewDropdownState extends State<PeerViewDropdown> {
         child: Icon(
           peerCardUiType.value == PeerUiType.grid
               ? Icons.grid_view_rounded
-              : peerCardUiType.value == PeerUiType.tile
+              : peerCardUiType.value == PeerUiType.list
                   ? Icons.view_list_rounded
                   : Icons.view_agenda_rounded,
           size: 18,
@@ -841,7 +877,7 @@ class _PeerSortDropdownState extends State<PeerSortDropdown> {
     if (!PeerSortType.values.contains(peerSort.value)) {
       peerSort.value = PeerSortType.remoteId;
       bind.setLocalFlutterOption(
-        k: "peer-sorting",
+        k: kOptionPeerSorting,
         v: peerSort.value,
       );
     }
@@ -871,7 +907,7 @@ class _PeerSortDropdownState extends State<PeerSortDropdown> {
                     if (v != null) {
                       peerSort.value = v;
                       await bind.setLocalFlutterOption(
-                        k: "peer-sorting",
+                        k: kOptionPeerSorting,
                         v: peerSort.value,
                       );
                     }

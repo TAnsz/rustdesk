@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:flutter_hbb/consts.dart';
+
 final _privateConstructorUsedError = UnsupportedError(
     'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
@@ -57,14 +59,12 @@ class RustdeskImpl {
   }
 
   String sessionAddExistedSync(
-      {required String id, required UuidValue sessionId, dynamic hint}) {
+      {required String id,
+      required UuidValue sessionId,
+      required Int32List displays,
+      dynamic hint}) {
     return '';
   }
-
-  void sessionTryAddDisplay(
-      {required UuidValue sessionId,
-      required Int32List displays,
-      dynamic hint}) {}
 
   String sessionAddSync(
       {required UuidValue sessionId,
@@ -90,6 +90,14 @@ class RustdeskImpl {
       jsonEncode({'id': id})
     ]);
     return Stream.empty();
+  }
+
+  Stream<EventToUI> sessionStartWithDisplays(
+      {required UuidValue sessionId,
+      required String id,
+      required Int32List displays,
+      dynamic hint}) {
+    throw UnimplementedError();
   }
 
   Future<bool?> sessionGetRemember(
@@ -201,12 +209,6 @@ class RustdeskImpl {
         ]));
   }
 
-  Future<String?> sessionGetFlutterOptionByPeerId(
-      {required String id, required String k, dynamic hint}) {
-    return Future(
-        () => js.context.callMethod('getByName', ['option:flutter:peer', k]));
-  }
-
   int getNextTextureKey({dynamic hint}) {
     return 0;
   }
@@ -237,7 +239,6 @@ class RustdeskImpl {
 
   Future<String?> sessionGetViewStyle(
       {required UuidValue sessionId, dynamic hint}) {
-    // TODO: default values
     return Future(() =>
         js.context.callMethod('getByName', ['option:session', 'view_style']));
   }
@@ -252,7 +253,6 @@ class RustdeskImpl {
 
   Future<String?> sessionGetScrollStyle(
       {required UuidValue sessionId, dynamic hint}) {
-    // TODO: default values
     return Future(() =>
         js.context.callMethod('getByName', ['option:session', 'scroll_style']));
   }
@@ -266,9 +266,7 @@ class RustdeskImpl {
   }
 
   Future<String?> sessionGetImageQuality(
-      // TODO: default values
-      {required UuidValue sessionId,
-      dynamic hint}) {
+      {required UuidValue sessionId, dynamic hint}) {
     return Future(() => js.context
         .callMethod('getByName', ['option:session', 'image_quality']));
   }
@@ -283,9 +281,9 @@ class RustdeskImpl {
 
   Future<String?> sessionGetKeyboardMode(
       {required UuidValue sessionId, dynamic hint}) {
-    // TODO: default values
-    return Future(() => js.context
-        .callMethod('getByName', ['option:session', 'keyboard_mode']));
+    final mode =
+        js.context.callMethod('getByName', ['option:session', 'keyboard_mode']);
+    return Future(() => mode == '' ? null : mode);
   }
 
   Future<void> sessionSetKeyboardMode(
@@ -345,7 +343,11 @@ class RustdeskImpl {
 
   bool sessionIsKeyboardModeSupported(
       {required UuidValue sessionId, required String mode, dynamic hint}) {
-    throw UnimplementedError();
+    return mode == kKeyLegacyMode;
+  }
+
+  bool sessionIsMultiUiSession({required UuidValue sessionId, dynamic hint}) {
+    return false;
   }
 
   Future<void> sessionSetCustomImageQuality(
@@ -678,7 +680,8 @@ class RustdeskImpl {
     return Future(() => js.context.callMethod('setByName', ['options', json]));
   }
 
-  Future<String> mainTestIfValidServer({required String server, dynamic hint}) {
+  Future<String> mainTestIfValidServer(
+      {required String server, required bool testWithProxy, dynamic hint}) {
     // TODO: implement
     return Future.value('');
   }
@@ -748,8 +751,7 @@ class RustdeskImpl {
   }
 
   Future<void> mainCheckConnectStatus({dynamic hint}) {
-    return Future(
-        () => js.context.callMethod('setByName', ["check_conn_status"]));
+    throw UnimplementedError();
   }
 
   Future<bool> mainIsUsingPublicServer({dynamic hint}) {
@@ -770,6 +772,24 @@ class RustdeskImpl {
       required String body,
       required String header,
       dynamic hint}) {
+    throw UnimplementedError();
+  }
+
+  Future<bool> mainGetProxyStatus({dynamic hint}) {
+    return Future(() => false);
+  }
+
+  Future<void> mainHttpRequest({
+    required String url,
+    required String method,
+    String? body,
+    required String header,
+    dynamic hint,
+  }) {
+    throw UnimplementedError();
+  }
+
+  Future<String?> mainGetHttpStatus({required String url, dynamic hint}) {
     throw UnimplementedError();
   }
 
@@ -923,18 +943,20 @@ class RustdeskImpl {
     throw UnimplementedError();
   }
 
-  Future<String> mainDefaultVideoSaveDirectory({dynamic hint}) {
+  String mainVideoSaveDirectory({required bool root, dynamic hint}) {
     throw UnimplementedError();
   }
 
   Future<void> mainSetUserDefaultOption(
       {required String key, required String value, dynamic hint}) {
-    // TODO: do we need the default option?
-    throw UnimplementedError();
+    return js.context.callMethod('getByName', [
+      'option:user:default',
+      jsonEncode({'name': key, 'value': value})
+    ]);
   }
 
   String mainGetUserDefaultOption({required String key, dynamic hint}) {
-    throw UnimplementedError();
+    return js.context.callMethod('getByName', ['option:user:default', key]);
   }
 
   Future<String> mainHandleRelayId({required String id, dynamic hint}) {
@@ -946,7 +968,7 @@ class RustdeskImpl {
   }
 
   String mainGetMainDisplay({dynamic hint}) {
-    throw UnimplementedError();
+    return js.context.callMethod('getByName', ['main_display']);
   }
 
   String mainGetDisplays({dynamic hint}) {
@@ -1053,7 +1075,7 @@ class RustdeskImpl {
     throw UnimplementedError();
   }
 
-  bool mainHasGpucodec({dynamic hint}) {
+  bool mainHasVram({dynamic hint}) {
     throw UnimplementedError();
   }
 
@@ -1390,15 +1412,7 @@ class RustdeskImpl {
     return false;
   }
 
-  Future<void> mainStartPa({dynamic hint}) {
-    throw UnimplementedError();
-  }
-
   bool mainHideDocker({dynamic hint}) {
-    throw UnimplementedError();
-  }
-
-  bool mainHasPixelbufferTextureRender({dynamic hint}) {
     throw UnimplementedError();
   }
 
@@ -1445,6 +1459,10 @@ class RustdeskImpl {
   }
 
   bool isDisableAb({dynamic hint}) {
+    return false;
+  }
+
+  bool isDisableGroupPanel({dynamic hint}) {
     return false;
   }
 
@@ -1553,7 +1571,9 @@ class RustdeskImpl {
   }
 
   String mainSupportedInputSource({dynamic hint}) {
-    return jsonEncode(['Input source 2', 'input_source_2_tip']);
+    return jsonEncode([
+      ['Input source 2', 'input_source_2_tip']
+    ]);
   }
 
   Future<String> mainGenerate2Fa({dynamic hint}) {
@@ -1569,6 +1589,28 @@ class RustdeskImpl {
   }
 
   String mainGetHardOption({required String key, dynamic hint}) {
+    throw UnimplementedError();
+  }
+
+  Future<void> mainCheckHwcodec({dynamic hint}) {
+    throw UnimplementedError();
+  }
+
+  Future<void> sessionRequestNewDisplayInitMsgs(
+      {required UuidValue sessionId, required int display, dynamic hint}) {
+    throw UnimplementedError();
+  }
+
+  Future<String> mainHandleWaylandScreencastRestoreToken(
+      {required String key, required String value, dynamic hint}) {
+    throw UnimplementedError();
+  }
+
+  bool mainIsOptionFixed({required String key, dynamic hint}) {
+    throw UnimplementedError();
+  }
+
+  bool mainGetUseTextureRender({dynamic hint}) {
     throw UnimplementedError();
   }
 
