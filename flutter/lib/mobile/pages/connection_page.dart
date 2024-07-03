@@ -68,6 +68,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
       if (!bind.isCustomClient()) {
         Timer(const Duration(seconds: 1), () async {
           _updateUrl = await bind.mainGetSoftwareUpdateUrl();
+          _updateUrl = '';
           if (_updateUrl.isNotEmpty) setState(() {});
         });
       }
